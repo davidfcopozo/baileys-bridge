@@ -1,0 +1,11 @@
+{
+  "name": "baileys-bridge",
+  "type": "module",
+  "scripts": { "start": "node index.js" },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.6.0",
+    "express": "^4.19.2",
+    "body-parser": "^1.20.2",
+    "node-fetch": "^3.3.2"
+  }
+}
