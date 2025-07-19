@@ -26,23 +26,32 @@ if (!fs.existsSync(authDir)) {
     fs.mkdirSync(authDir, { recursive: true });
 }
 
+// Create a proper logger that Baileys expects
+const logger = {
+    level: 'silent',
+    trace: () => {},
+    debug: () => {},
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    fatal: () => {},
+    child: () => ({
+        level: 'silent',
+        trace: () => {},
+        debug: () => {},
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        fatal: () => {}
+    })
+};
+
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
     
     sock = makeWASocket({
         auth: state,
-        logger: {
-            level: 'silent',
-            child: () => ({
-                level: 'silent',
-                trace: () => {},
-                debug: () => {},
-                info: () => {},
-                warn: () => {},
-                error: () => {},
-                fatal: () => {}
-            })
-        }
+        logger: logger
     });
 
     sock.ev.on('creds.update', saveCreds);
