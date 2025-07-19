@@ -31,10 +31,17 @@ async function connectToWhatsApp() {
     
     sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
         logger: {
             level: 'silent',
-            child: () => ({ level: 'silent' })
+            child: () => ({
+                level: 'silent',
+                trace: () => {},
+                debug: () => {},
+                info: () => {},
+                warn: () => {},
+                error: () => {},
+                fatal: () => {}
+            })
         }
     });
 
