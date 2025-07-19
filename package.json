@@ -2,11 +2,12 @@
   "name": "whatsapp-baileys-bridge",
   "version": "1.0.0",
   "description": "WhatsApp bridge server using Baileys for n8n integration",
-  "main": "server.js",
+  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "build": "npm ci"
-    "dev": "nodemon server.js"
+    "build": "npm install",
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.7",
