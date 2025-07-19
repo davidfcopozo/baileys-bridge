@@ -1,80 +1,235 @@
-import { makeWASocket, useMultiFileAuthState } from '@whiskeysockets/baileys';
-import qrcode from 'qrcode';
-import express from 'express';
-import bodyParser from 'body-parser';
-import fetch from 'node-fetch';
-import fs from 'fs/promises';
-import path from 'path';
+const express = require('express');
+const { makeWASocket, DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
+const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
-app.use(bodyParser.json());
-
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
-const PHONE_NUMBER = process.env.PHONE_NUMBER;
+
+app.use(express.json());
+
 let sock;
-let qrCodeSVG = null;
+let qrCode = '';
+let connectionStatus = 'disconnected';
 
-/* ---------- core connection ---------- */
-async function connect() {
-  const { state, saveCreds } = await useMultiFileAuthState('./auth');
+// Ensure auth directory exists
+const authDir = path.join(__dirname, 'auth');
+if (!fs.existsSync(authDir)) {
+    fs.mkdirSync(authDir, { recursive: true });
+}
 
-  const sock = makeWASocket({
-    auth: state,
-    printQRInTerminal: false,
-  });
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+    
+    sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true,
+        logger: {
+            level: 'silent',
+            child: () => ({ level: 'silent' })
+        }
+    });
 
-  sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    /* 1. show QR or pairing code */
-    if (qr) {
-      qrCodeSVG = await qrcode.toString(qr, { type: 'svg' });
-      console.log('QR ready');
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update;
+        
+        if (qr) {
+            qrCode = qr;
+            connectionStatus = 'qr_ready';
+            console.log('QR Code generated');
+        }
+
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect?.error instanceof Boom) 
+                ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
+                : true;
+            
+            console.log('Connection closed due to:', lastDisconnect?.error);
+            connectionStatus = 'disconnected';
+            
+            if (shouldReconnect) {
+                console.log('Reconnecting...');
+                connectToWhatsApp();
+            }
+        } else if (connection === 'open') {
+            console.log('WhatsApp connected successfully');
+            connectionStatus = 'connected';
+            qrCode = '';
+        }
+    });
+
+    // Handle incoming messages
+    sock.ev.on('messages.upsert', async (m) => {
+        const messages = m.messages;
+        
+        for (const message of messages) {
+            if (message.key.fromMe) continue; // Skip own messages
+            
+            const messageData = {
+                id: message.key.id,
+                from: message.key.remoteJid,
+                fromName: message.pushName || 'Unknown',
+                timestamp: message.messageTimestamp,
+                body: message.message?.conversation || 
+                      message.message?.extendedTextMessage?.text || 
+                      message.message?.imageMessage?.caption || 
+                      message.message?.videoMessage?.caption || '',
+                messageType: getMessageType(message),
+                isGroup: message.key.remoteJid.endsWith('@g.us')
+            };
+
+            // Send to n8n webhook
+            if (N8N_WEBHOOK_URL) {
+                try {
+                    await axios.post(N8N_WEBHOOK_URL, messageData, {
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    console.log('Message sent to n8n:', messageData.body);
+                } catch (error) {
+                    console.error('Error sending to n8n:', error.message);
+                }
+            }
+        }
+    });
+}
+
+function getMessageType(message) {
+    if (message.message?.conversation) return 'text';
+    if (message.message?.extendedTextMessage) return 'text';
+    if (message.message?.imageMessage) return 'image';
+    if (message.message?.videoMessage) return 'video';
+    if (message.message?.audioMessage) return 'audio';
+    if (message.message?.documentMessage) return 'document';
+    if (message.message?.stickerMessage) return 'sticker';
+    return 'unknown';
+}
+
+// Routes
+app.get('/', (req, res) => {
+    res.json({
+        status: connectionStatus,
+        message: 'WhatsApp Baileys Bridge Server',
+        endpoints: {
+            qr: '/qr',
+            status: '/status',
+            send: '/send',
+            health: '/health'
+        }
+    });
+});
+
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', connection: connectionStatus });
+});
+
+app.get('/status', (req, res) => {
+    res.json({ 
+        status: connectionStatus,
+        hasQR: !!qrCode 
+    });
+});
+
+app.get('/qr', (req, res) => {
+    if (qrCode) {
+        res.json({ qr: qrCode, status: 'qr_ready' });
     } else {
-      qrCodeSVG = null;
+        res.json({ 
+            message: connectionStatus === 'connected' 
+                ? 'Already connected' 
+                : 'QR not available',
+            status: connectionStatus 
+        });
     }
+});
 
-    /* 2. when socket is finally open we may request pairing code */
-   if (connection === 'open') {
-  console.log('Socket open ✅');
-  if (!state.creds.registered && sock.requestPairingCode) {
-    sock.requestPairingCode('34656565656')
-      .then(code => console.log('Pairing code:', code))
-      .catch(err => console.log('Pairing code failed:', err.message));
-  }
-}
+// Send message endpoint
+app.post('/send', async (req, res) => {
+    try {
+        const { to, message, type = 'text' } = req.body;
+        
+        if (!sock || connectionStatus !== 'connected') {
+            return res.status(400).json({ 
+                error: 'WhatsApp not connected',
+                status: connectionStatus 
+            });
+        }
+        
+        if (!to || !message) {
+            return res.status(400).json({ 
+                error: 'Missing required fields: to, message' 
+            });
+        }
 
-    /* 3. auto-reconnect on non-logout errors */
-    if (connection === 'close') {
-      const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== 401;
-      if (shouldReconnect) {
-        console.log('Reconnecting in 3 s…');
-        setTimeout(connect, 3000);
-      }
+        // Format phone number
+        const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+        
+        let result;
+        switch (type) {
+            case 'text':
+                result = await sock.sendMessage(jid, { text: message });
+                break;
+            default:
+                return res.status(400).json({ error: 'Unsupported message type' });
+        }
+        
+        res.json({ 
+            success: true, 
+            messageId: result.key.id,
+            to: jid 
+        });
+        
+    } catch (error) {
+        console.error('Send message error:', error);
+        res.status(500).json({ 
+            error: 'Failed to send message',
+            details: error.message 
+        });
     }
-  });
+});
 
-  /* 4. forward inbound messages to n8n */
-  sock.ev.on('messages.upsert', async ({ messages }) => {
-    const m = messages[0];
-    if (m.key.fromMe) return;
-
-    const payload = {
-      id: m.key.id,
-      from: m.key.remoteJid,
-      text: m.message?.conversation || m.message?.extendedTextMessage?.text || '',
-      ts: m.messageTimestamp,
-    };
-
-    if (N8N_WEBHOOK_URL) {
-      fetch(N8N_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).catch(() => {});
+// Restart connection endpoint
+app.post('/restart', async (req, res) => {
+    try {
+        if (sock) {
+            sock.end();
+        }
+        setTimeout(() => {
+            connectToWhatsApp();
+        }, 2000);
+        
+        res.json({ message: 'Restarting connection...' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
-  });
-}
-connect();
-app.listen(PORT, () => console.log(`Baileys bridge listening on :${PORT}`));
+});
+
+// Start server
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`N8N Webhook URL: ${N8N_WEBHOOK_URL || 'Not set'}`);
+    
+    // Initialize WhatsApp connection
+    connectToWhatsApp();
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('Shutting down gracefully...');
+    if (sock) {
+        sock.end();
+    }
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('Received SIGTERM, shutting down...');
+    if (sock) {
+        sock.end();
+    }
+    process.exit(0);
+});
