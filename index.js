@@ -9,6 +9,7 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 10000;
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
+const PHONE_NUMBER = process.env.PHONE_NUMBER;
 
 let sock;
 let qrCodeSVG = null;
@@ -19,6 +20,12 @@ let qrCodeSVG = null;
     auth: state,
     printQRInTerminal: false,         // we’ll show it via HTTP
   });
+
+  // 2. ask for pairing code (if no session yet)
+if (!state.creds.registered) {
+  const code = await sock.requestPairingCode(PHONE_NUMBER); // <-- SPANISH NUMBER
+  console.log('Pairing code:', code);
+}
 
   sock.ev.on('creds.update', saveCreds);
 
