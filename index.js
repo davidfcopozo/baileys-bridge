@@ -19,33 +19,47 @@ let qrCodeSVG = null;
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth');
 
-  sock = makeWASocket({
+  const sock = makeWASocket({
     auth: state,
     printQRInTerminal: false,
   });
 
   sock.ev.on('creds.update', saveCreds);
 
-  /* pairing code (only if no session yet) */
-  if (!state.creds.registered && sock.requestPairingCode) {
-    const code = await sock.requestPairingCode(PHONE_NUMBER); // <-- YOUR NUMBER
-    console.log('Pairing code:', code);
-  }
-
-  /* QR or connection status */
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+    /* 1. show QR or pairing code */
     if (qr) {
       qrCodeSVG = await qrcode.toString(qr, { type: 'svg' });
+      console.log('QR ready');
     } else {
       qrCodeSVG = null;
     }
+
+    /* 2. when socket is finally open we may request pairing code */
+    if (connection === 'open') {
+      console.log('Socket open ✅');
+      // if still not registered, request a pairing code
+      if (!state.creds.registered && sock.requestPairingCode) {
+        try {
+          const code = await sock.requestPairingCode('34656565656'); // Spanish number
+          console.log('Pairing code:', code);
+        } catch (e) {
+          console.log('Could not request pairing code:', e.message);
+        }
+      }
+    }
+
+    /* 3. auto-reconnect on non-logout errors */
     if (connection === 'close') {
       const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== 401;
-      if (shouldReconnect) setTimeout(connect, 3000);
+      if (shouldReconnect) {
+        console.log('Reconnecting in 3 s…');
+        setTimeout(connect, 3000);
+      }
     }
   });
 
-  /* forward every incoming message to n8n */
+  /* 4. forward inbound messages to n8n */
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const m = messages[0];
     if (m.key.fromMe) return;
@@ -66,39 +80,5 @@ async function connect() {
     }
   });
 }
-
-/* ---------- HTTP routes ---------- */
-
-app.get('/', (_req, res) => {
-  if (qrCodeSVG) {
-    res.setHeader('Content-Type', 'image/svg+xml');
-    res.send(qrCodeSVG);
-  } else {
-    res.send('Baileys bridge is connected ✔');
-  }
-});
-
-app.post('/send', async (req, res) => {
-  try {
-    const { jid, text } = req.body;
-    if (!jid || !text) return res.status(400).json({ error: 'jid & text required' });
-    await sock.sendMessage(jid, { text });
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.delete('/reset', async (_req, res) => {
-  try {
-    await fs.rm(path.resolve('./auth'), { recursive: true, force: true });
-    console.log('Session wiped.');
-    res.json({ ok: true, msg: 'Session deleted – restart container to pair again.' });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-/* ---------- start ---------- */
 connect();
 app.listen(PORT, () => console.log(`Baileys bridge listening on :${PORT}`));
