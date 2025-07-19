@@ -1,9 +1,14 @@
-const express = require('express');
-const { makeWASocket, DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
-const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
+import express from 'express';
+import { makeWASocket, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
+import { Boom } from '@hapi/boom';
+import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// ES module equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
