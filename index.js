@@ -6,41 +6,37 @@ import fetch from 'node-fetch';
 
 const app = express();
 app.use(bodyParser.json());
-
 const PORT = process.env.PORT || 10000;
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
-const PHONE_NUMBER = process.env.PHONE_NUMBER;
 
 let sock;
 let qrCodeSVG = null;
 
-(async () => {
+// ---------- helper to start/re-start ----------
+async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth');
   sock = makeWASocket({
     auth: state,
-    printQRInTerminal: false,         // we’ll show it via HTTP
+    printQRInTerminal: false,
   });
-
-  // 2. ask for pairing code (if no session yet)
-if (!state.creds.registered) {
-  const code = await sock.requestPairingCode(PHONE_NUMBER); // <-- SPANISH NUMBER
-  console.log('Pairing code:', code);
-}
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
+  // pairing code (only once, if no session yet)
+  if (!state.creds.registered && sock.requestPairingCode) {
+    const code = await sock.requestPairingCode('34656565656'); // <-- your Spanish number
+    console.log('Pairing code:', code);
+  }
+
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      // convert QR buffer → SVG string
       qrCodeSVG = await qrcode.toString(qr, { type: 'svg' });
-    }
-    if (connection === 'open') {
-      qrCodeSVG = null;               // hide QR once connected
+    } else {
+      qrCodeSVG = null;
     }
     if (connection === 'close') {
       const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== 401;
-      if (shouldReconnect) startSock(); // auto-reconnect (optional)
+      if (shouldReconnect) setTimeout(connect, 3000); // auto-reconnect
     }
   });
 
@@ -49,31 +45,14 @@ if (!state.creds.registered) {
     if (m.key.fromMe) return;
     const payload = { id: m.key.id, from: m.key.remoteJid, text: m.message?.conversation || '', ts: m.messageTimestamp };
     if (N8N_WEBHOOK_URL) {
-      await fetch(N8N_WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
     }
   });
-})();
+}
 
-// show QR code in browser
-app.get('/', (_req, res) => {
-  if (qrCodeSVG) {
-    res.setHeader('Content-Type', 'image/svg+xml');
-    res.send(qrCodeSVG);
-  } else {
-    res.send('Baileys bridge is connected ✔');
-  }
-});
-
-// existing /send endpoint stays the same
-app.post('/send', async (req, res) => {
-  try {
-    const { jid, text } = req.body;
-    if (!jid || !text) return res.status(400).json({ error: 'jid & text required' });
-    await sock.sendMessage(jid, { text });
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.listen(PORT, () => console.log(`Baileys bridge listening on :${PORT}`));
+// kick it off
+connect();
