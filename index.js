@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import express from 'express';
 import bodyParser from 'body-parser';
 import fetch from 'node-fetch';
