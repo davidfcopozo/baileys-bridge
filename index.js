@@ -11,7 +11,7 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 10000;
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
-
+const PHONE_NUMBER = process.env.PHONE_NUMBER;
 let sock;
 let qrCodeSVG = null;
 
@@ -28,7 +28,7 @@ async function connect() {
 
   /* pairing code (only if no session yet) */
   if (!state.creds.registered && sock.requestPairingCode) {
-    const code = await sock.requestPairingCode('34656565656'); // <-- YOUR NUMBER
+    const code = await sock.requestPairingCode(PHONE_NUMBER); // <-- YOUR NUMBER
     console.log('Pairing code:', code);
   }
 
