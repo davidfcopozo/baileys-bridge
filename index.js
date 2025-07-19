@@ -36,18 +36,14 @@ async function connect() {
     }
 
     /* 2. when socket is finally open we may request pairing code */
-    if (connection === 'open') {
-      console.log('Socket open ✅');
-      // if still not registered, request a pairing code
-      if (!state.creds.registered && sock.requestPairingCode) {
-        try {
-          const code = await sock.requestPairingCode('34656565656'); // Spanish number
-          console.log('Pairing code:', code);
-        } catch (e) {
-          console.log('Could not request pairing code:', e.message);
-        }
-      }
-    }
+   if (connection === 'open') {
+  console.log('Socket open ✅');
+  if (!state.creds.registered && sock.requestPairingCode) {
+    sock.requestPairingCode('34656565656')
+      .then(code => console.log('Pairing code:', code))
+      .catch(err => console.log('Pairing code failed:', err.message));
+  }
+}
 
     /* 3. auto-reconnect on non-logout errors */
     if (connection === 'close') {
