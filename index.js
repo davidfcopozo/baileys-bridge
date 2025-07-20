@@ -454,12 +454,6 @@ app.get("/test-n8n", async (req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 n8n Base URL: ${N8N_WEBHOOK_URL.split("/webhook/")[0]}`);
-  console.log(
-    `🔗 n8n Webhook Path: ${
-      N8N_WEBHOOK_URL.split("/webhook/")[1].split("/")[0]
-    }`
-  );
   console.log(`📨 n8n Webhook URL: ${N8N_WEBHOOK_URL}`);
   console.log(`🌐 Baileys Bridge URL: ${BAILEYS_BASE_URL}`);
   console.log("");
