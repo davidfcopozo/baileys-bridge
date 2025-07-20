@@ -1,0 +1,277 @@
+{
+  "name": "WhatsApp Bailey Receiver",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "baileys",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [320, 260],
+      "id": "f74d1bac-d500-451b-a4ee-30ea1e6bd277",
+      "name": "Webhook - Receive Message",
+      "webhookId": "baileys"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phone-number",
+              "name": "phoneNumber",
+              "value": "={{ $json.from || $json.to || $json.key?.remoteJid || $json.remoteJid || $json.sender || 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "message-text",
+              "name": "messageText",
+              "value": "={{ $json.message || $json.body || $json.text || $json.conversation || $json.extendedTextMessage?.text || JSON.stringify($json) }}",
+              "type": "string"
+            },
+            {
+              "id": "message-type",
+              "name": "messageType",
+              "value": "={{ $json.type || $json.messageType || ($json.audioMessage ? 'audio' : 'text') }}",
+              "type": "string"
+            },
+            {
+              "id": "timestamp",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            },
+            {
+              "id": "full-payload",
+              "name": "fullPayload",
+              "value": "={{ $json }}",
+              "type": "object"
+            },
+            {
+              "id": "debug-info",
+              "name": "debugInfo",
+              "value": "=Raw data keys: {{ Object.keys($json).join(', ') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [540, 260],
+      "id": "extract-message-data",
+      "name": "Extract Message Data"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "debug-raw",
+              "name": "rawWebhookData",
+              "value": "={{ JSON.stringify($json, null, 2) }}",
+              "type": "string"
+            },
+            {
+              "id": "debug-summary",
+              "name": "debugSummary",
+              "value": "=🔍 DEBUG INFO:\n📋 Available keys: {{ Object.keys($json).join(', ') }}\n📊 Data type: {{ typeof $json }}\n📄 Full JSON: {{ JSON.stringify($json) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [360, 400],
+      "id": "debug-webhook-data",
+      "name": "Debug Webhook Data"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.messageType }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "text-condition"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text Message"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.messageType }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "audio-condition"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Audio Message"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [760, 260],
+      "id": "message-type-switch",
+      "name": "Message Type Switch"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "display-info",
+              "name": "displayInfo",
+              "value": "=📱 TEXT MESSAGE RECEIVED\n📞 From: {{ $json.phoneNumber }}\n💬 Message: {{ $json.messageText }}\n🕐 Time: {{ $json.timestamp }}",
+              "type": "string"
+            },
+            {
+              "id": "structured-data",
+              "name": "structuredData",
+              "value": "={{ { phoneNumber: $json.phoneNumber, message: $json.messageText, type: $json.messageType, timestamp: $json.timestamp } }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [980, 160],
+      "id": "display-text-message",
+      "name": "Display Text Message"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "display-info",
+              "name": "displayInfo",
+              "value": "=🎵 AUDIO MESSAGE RECEIVED\n📞 From: {{ $json.phoneNumber }}\n🔊 Audio Type: {{ $json.messageType }}\n🕐 Time: {{ $json.timestamp }}",
+              "type": "string"
+            },
+            {
+              "id": "structured-data",
+              "name": "structuredData",
+              "value": "={{ { phoneNumber: $json.phoneNumber, audioInfo: 'Audio message received', type: $json.messageType, timestamp: $json.timestamp } }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [980, 360],
+      "id": "display-audio-message",
+      "name": "Display Audio Message"
+    },
+    {
+      "parameters": {
+        "content": "## 📱 WhatsApp Message Receiver\n\n**Webhook URL:** Use this in your Bailey instance\n- Test: `http://localhost:5678/webhook-test/baileys`\n- Production: `https://your-domain.com/webhook/baileys`\n\n**Expected JSON Format from Bailey:**\n```json\n{\n  \"from\": \"1234567890\",\n  \"message\": \"Hello world\",\n  \"type\": \"text\"\n}\n```",
+        "height": 300,
+        "width": 400,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [320, 40],
+      "id": "webhook-info",
+      "name": "Webhook Info"
+    }
+  ],
+  "connections": {
+    "Webhook - Receive Message": {
+      "main": [
+        [
+          {
+            "node": "Extract Message Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Debug Webhook Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Data": {
+      "main": [
+        [
+          {
+            "node": "Message Type Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message Type Switch": {
+      "main": [
+        [
+          {
+            "node": "Display Text Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Display Audio Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c581bc0a3356f04f72b906b9b070f56b794ffbaa151ff60d4d12c4ffd9040af3"
+  }
+}
