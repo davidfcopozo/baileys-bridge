@@ -460,7 +460,7 @@ app.listen(PORT, () => {
       N8N_WEBHOOK_URL.split("/webhook/")[1].split("/")[0]
     }`
   );
-  console.log(`📨 Full n8n Webhook URL: ${N8N_WEBHOOK_URL}`);
+  console.log(`📨 n8n Webhook URL: ${N8N_WEBHOOK_URL}`);
   console.log(`🌐 Baileys Bridge URL: ${BAILEYS_BASE_URL}`);
   console.log("");
   console.log("Environment Variables:");
