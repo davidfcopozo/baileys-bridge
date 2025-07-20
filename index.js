@@ -75,14 +75,16 @@ async function connectToWhatsApp() {
         sock = makeWASocket({
             auth: state,
             logger: logger,
-            printQRInTerminal: true,
+            printQRInTerminal: false, // Don't spam terminal
             browser: ['Baileys Bridge', 'Chrome', '4.0.0'],
             connectTimeoutMs: 60000,
             defaultQueryTimeoutMs: 0,
             keepAliveIntervalMs: 10000,
             generateHighQualityLinkPreview: true,
             syncFullHistory: false,
-            markOnlineOnConnect: true
+            markOnlineOnConnect: true,
+            qrTimeout: 60000, // 60 seconds for QR timeout
+            retryRequestDelayMs: 250
         });
 
         sock.ev.on('creds.update', saveCreds);
@@ -95,6 +97,14 @@ async function connectToWhatsApp() {
                 connectionStatus = 'qr_ready';
                 console.log('📱 QR Code generated - Please scan with WhatsApp');
                 console.log('⏰ QR Code expires in 60 seconds');
+                
+                // Set QR timeout
+                setTimeout(() => {
+                    if (connectionStatus === 'qr_ready') {
+                        console.log('⏰ QR Code expired, generating new one...');
+                        qrCode = '';
+                    }
+                }, 60000);
             }
 
             if (connection === 'close') {
@@ -105,12 +115,22 @@ async function connectToWhatsApp() {
                 const reason = lastDisconnect?.error?.output?.statusCode;
                 console.log('❌ Connection closed due to:', lastDisconnect?.error);
                 
+                // Handle QR timeout specifically
+                if (lastDisconnect?.error?.message?.includes('QR refs attempts ended')) {
+                    console.log('⏰ QR Code attempts ended, restarting connection...');
+                    connectionStatus = 'disconnected';
+                    qrCode = '';
+                    setTimeout(() => connectToWhatsApp(), 3000);
+                    return;
+                }
+                
                 // Handle specific disconnect reasons
                 if (reason === DisconnectReason.badSession) {
                     console.log('🔄 Bad session, clearing auth and restarting...');
-                    await clearAuthState();
                     connectionStatus = 'disconnected';
-                    setTimeout(() => connectToWhatsApp(), 3000);
+                    clearAuthState().then(() => {
+                        setTimeout(() => connectToWhatsApp(), 3000);
+                    });
                 } else if (reason === DisconnectReason.connectionClosed) {
                     console.log('🔄 Connection closed, reconnecting...');
                     connectionStatus = 'disconnected';
@@ -124,8 +144,10 @@ async function connectToWhatsApp() {
                     connectionStatus = 'disconnected';
                 } else if (reason === DisconnectReason.loggedOut) {
                     console.log('🚪 Logged out, clearing auth state...');
-                    await clearAuthState();
                     connectionStatus = 'disconnected';
+                    clearAuthState().then(() => {
+                        console.log('✅ Auth state cleared after logout');
+                    });
                 } else if (reason === DisconnectReason.restartRequired) {
                     console.log('🔄 Restart required, restarting...');
                     connectionStatus = 'disconnected';
